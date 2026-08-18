@@ -1,7 +1,22 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits } = require('discord.js');
 const axios = require('axios');
+const express = require('express');
 
+// --- CONFIGURACIÓN DEL SERVIDOR WEB PARA 24/7 ---
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/', (req, res) => {
+    res.send('¡El bot de Discord está activo y funcionando 24/7!');
+});
+
+app.listen(PORT, () => {
+    console.log(`Servidor web corriendo en el puerto ${PORT}`);
+});
+// ------------------------------------------------
+
+// --- CONFIGURACIÓN DEL BOT DE DISCORD ---
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -33,7 +48,6 @@ client.on('messageCreate', async (message) => {
         try {
             const processingMsg = await message.reply('Obteniendo el código HTML...');
 
-            // Realizar la petición HTTP
             const response = await axios.get(url, {
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -42,14 +56,12 @@ client.on('messageCreate', async (message) => {
 
             let htmlContent = response.data;
 
-            // Si la respuesta es un objeto JSON, convertirlo a texto legible
             if (typeof htmlContent === 'object') {
                 htmlContent = JSON.stringify(htmlContent, null, 2);
             } else {
                 htmlContent = String(htmlContent);
             }
 
-            // Discord limita los mensajes a 2000 caracteres
             if (htmlContent.length > 1900) {
                 const buffer = Buffer.from(htmlContent, 'utf-8');
                 await processingMsg.delete().catch(() => {});
@@ -59,7 +71,6 @@ client.on('messageCreate', async (message) => {
                 });
             }
 
-            // Enviar como texto en bloque de código HTML
             await processingMsg.edit(`\`\`\`html\n${htmlContent}\n\`\`\``);
 
         } catch (error) {
