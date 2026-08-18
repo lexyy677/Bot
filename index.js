@@ -3,13 +3,12 @@ const { Client, GatewayIntentBits } = require('discord.js');
 const axios = require('axios');
 const express = require('express');
 
-// --- 1. Servidor Express (Mantiene el bot 24/7 en Railway) ---
+// Servidor para mantener el bot activo 24/7 en Railway
 const app = express();
 const PORT = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send('Bot de Discord activo 24/7'));
-app.listen(PORT, () => console.log(`Servidor web activo en puerto ${PORT}`));
+app.get('/', (req, res) => res.send('Bot activo 24/7'));
+app.listen(PORT);
 
-// --- 2. Bot de Discord ---
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -18,9 +17,7 @@ const client = new Client({
     ]
 });
 
-client.once('ready', () => {
-    console.log(`Bot encendido y conectado: ${client.user.tag}`);
-});
+client.once('ready', () => console.log(`Bot encendido: ${client.user.tag}`));
 
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.content.startsWith('.get')) return;
@@ -31,7 +28,7 @@ client.on('messageCreate', async (message) => {
     if (!url) return message.reply('Uso: `.get https://tu-link.com`');
 
     try {
-        const statusMsg = await message.reply('Extrayendo código fuente HTML...');
+        const statusMsg = await message.reply('Obteniendo código fuente...');
         
         const response = await axios.get(url, {
             headers: { 
@@ -40,22 +37,20 @@ client.on('messageCreate', async (message) => {
             timeout: 15000
         });
 
-        // Convertimos el contenido a texto
         const html = typeof response.data === 'string' ? response.data : JSON.stringify(response.data, null, 2);
 
-        // --- ENVIAR SIEMPRE COMO ARCHIVO ---
+        // --- ENVIAR SIEMPRE COMO .TXT ---
         const buffer = Buffer.from(html, 'utf-8');
         
         await message.channel.send({
-            content: `Aquí tienes el código fuente de **${url}**:`,
-            files: [{ attachment: buffer, name: 'index.html' }]
+            content: `Código fuente de **${url}**:`,
+            files: [{ attachment: buffer, name: 'source.txt' }]
         });
 
-        // Borramos el mensaje de carga
         await statusMsg.delete().catch(() => {});
 
     } catch (err) {
-        message.reply(`Error al intentar obtener la página: \`${err.message}\``);
+        message.reply(`Error: \`${err.message}\``);
     }
 });
 
