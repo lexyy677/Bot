@@ -21,14 +21,25 @@ const express = require('express');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const config = require('./config.json');
+
+// Intentar cargar config.json de manera segura
+let config = {};
+try {
+  config = require('./config.json');
+} catch (e) {
+  console.warn('⚠️ No se encontró config.json o está mal formado. Usando objeto vacío.');
+}
 
 // --- ARCHIVO Y FUNCIONES PARA REGISTRO DE TOP STAFF Y CALIFICACIONES ---
 const STATS_FILE = path.join(__dirname, 'ticketStats.json');
 
 function cargarEstadisticas() {
   if (!fs.existsSync(STATS_FILE)) {
-    fs.writeFileSync(STATS_FILE, JSON.stringify({}), 'utf-8');
+    try {
+      fs.writeFileSync(STATS_FILE, JSON.stringify({}), 'utf-8');
+    } catch (e) {
+      console.error('Error al crear ticketStats.json:', e);
+    }
     return {};
   }
   try {
@@ -49,6 +60,7 @@ function guardarEstadisticas(stats) {
 }
 
 function sumarTicketCerrado(userId) {
+  if (!userId) return;
   const stats = cargarEstadisticas();
   if (!stats[userId]) {
     stats[userId] = { tickets: 0, ratings: [] };
@@ -61,6 +73,7 @@ function sumarTicketCerrado(userId) {
 }
 
 function agregarCalificacion(staffId, rating) {
+  if (!staffId) return;
   const stats = cargarEstadisticas();
   if (!stats[staffId]) {
     stats[staffId] = { tickets: 0, ratings: [] };
@@ -73,7 +86,6 @@ function agregarCalificacion(staffId, rating) {
 }
 
 // --- CONFIGURACIÓN DE APARIENCIA Y EMOJIS ---
-// Reemplazado por un avatar predeterminado de Discord seguro por si la URL caduca.
 const BOT_AVATAR_URL = "https://cdn.discordapp.com/embed/avatars/0.png";
 
 const EMOJI_TICKET_HEADER = '<:emoji_11:1539597339746893975>';
@@ -107,13 +119,17 @@ const CANAL_EMOJIS = {
 
 const COLOR_SCRAPBOX = '#00FF00';
 
-// --- 1. PREVENCIÓN ANTI-CRASH GLOBAL ---
+// --- 1. PREVENCIÓN ANTI-CRASH GLOBAL EXTENDIDA ---
 process.on('unhandledRejection', (reason, promise) => {
   console.error('⚠️ [ANTI-CRASH] Unhandled Rejection:', reason);
 });
 
 process.on('uncaughtException', (err, origin) => {
   console.error('⚠️ [ANTI-CRASH] Uncaught Exception:', err);
+});
+
+process.on('uncaughtExceptionMonitor', (err, origin) => {
+  console.error('⚠️ [ANTI-CRASH] Exception Monitor:', err);
 });
 
 // --- 2. SERVIDOR KEEP-ALIVE (24/7) ---
@@ -179,21 +195,23 @@ client.once('ready', async () => {
   console.log(`✅ ${client.user.tag} conectado y listo.`);
   client.user.setActivity('ScrapBox | 24/7 Online', { type: 0 });
 
-  // Registro global eficiente usando REST API
-  try {
-    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-    await rest.put(
-      Routes.applicationCommands(client.user.id),
-      { body: [embedSlashCommand.toJSON()] }
-    );
-    console.log('✅ Slash Command /embed registrado globalmente.');
-  } catch (error) {
-    console.error('❌ Error registrando Slash Commands:', error);
+  if (process.env.DISCORD_TOKEN) {
+    try {
+      const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+      await rest.put(
+        Routes.applicationCommands(client.user.id),
+        { body: [embedSlashCommand.toJSON()] }
+      );
+      console.log('✅ Slash Command /embed registrado globalmente.');
+    } catch (error) {
+      console.error('❌ Error registrando Slash Commands:', error);
+    }
   }
 });
 
 // --- HELPERS ---
 function crearEmbedBienvenida(member) {
+  const icon = member.guild?.iconURL({ extension: 'png' }) || BOT_AVATAR_URL;
   const description = 
     `# - ${EMOJI_SALUDO} \`|\` Bienvenido a ScrapBox (${member})\n` +
     `¡Esperamos que te la pases bien en este servidor y hagas amigos y nos apoyes a este proyecto!\n\n` +
@@ -206,17 +224,13 @@ function crearEmbedBienvenida(member) {
   return new EmbedBuilder()
     .setDescription(description)
     .setColor(COLOR_SCRAPBOX)
-    .setImage(member.guild.iconURL({ extension: 'png' }) || BOT_AVATAR_URL)
+    .setImage(icon)
     .setTimestamp();
 }
 
 function crearEmbedBoost(member) {
-  const description = 
-    `# ${EMOJI_BOOST} ¡Nuevo boost en el servidor!\n\n` +
-    `Muchas gracias ${member} por boostear el servidor, reclama tus recompensas en <#1539559159635116133>`;
-
   return new EmbedBuilder()
-    .setDescription(description)
+    .setDescription(`# ${EMOJI_BOOST} ¡Nuevo boost en el servidor!\n\nMuchas gracias ${member} por boostear el servidor, reclama tus recompensas en <#1539559159635116133>`)
     .setColor(COLOR_SCRAPBOX)
     .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
     .setTimestamp();
@@ -225,10 +239,11 @@ function crearEmbedBoost(member) {
 // --- EVENTOS DE USUARIO ---
 client.on('guildMemberAdd', async (member) => {
   try {
+    if (!config.welcomeChannelId) return;
     const channel = member.guild.channels.cache.get(config.welcomeChannelId);
     if (!channel) return;
     const embed = crearEmbedBienvenida(member);
-    await channel.send({ content: `${member}`, embeds: [embed] });
+    await channel.send({ content: `${member}`, embeds: [embed] }).catch(() => {});
   } catch (error) {
     console.error('Error en bienvenida:', error);
   }
@@ -236,11 +251,12 @@ client.on('guildMemberAdd', async (member) => {
 
 client.on('guildMemberUpdate', async (oldMember, newMember) => {
   try {
+    if (!config.boostChannelId) return;
     if (!oldMember.premiumSince && newMember.premiumSince) {
       const channel = newMember.guild.channels.cache.get(config.boostChannelId);
       if (!channel) return;
       const embed = crearEmbedBoost(newMember);
-      await channel.send({ content: `${newMember}`, embeds: [embed] });
+      await channel.send({ content: `${newMember}`, embeds: [embed] }).catch(() => {});
     }
   } catch (error) {
     console.error('Error en boost:', error);
@@ -251,13 +267,16 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
 client.on('messageCreate', async (message) => {
   try {
     if (message.author.bot || !message.guild) return;
+    const prefix = config.prefix || '!';
 
-    const args = message.content.trim().split(/ +/);
+    if (!message.content.startsWith(prefix)) return;
+
+    const args = message.content.slice(prefix.length).trim().split(/ +/);
     const command = args.shift().toLowerCase();
 
-    if (command === `${config.prefix}setup-tickets`) {
+    if (command === 'setup-tickets') {
       if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
-        return message.reply('❌ Solo administradores pueden usar este comando.');
+        return message.reply('❌ Solo administradores pueden usar este comando.').catch(() => {});
       }
 
       await message.delete().catch(() => {});
@@ -292,13 +311,13 @@ client.on('messageCreate', async (message) => {
         );
 
       const row = new ActionRowBuilder().addComponents(selectMenu);
-      await message.channel.send({ embeds: [embed], components: [row] });
+      await message.channel.send({ embeds: [embed], components: [row] }).catch(() => {});
       return;
     }
 
-    if (command === `${config.prefix}topstaff` || command === `${config.prefix}top-staff`) {
+    if (command === 'topstaff' || command === 'top-staff') {
       if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
-        return message.reply('❌ No tienes permisos para consultar las estadísticas del equipo de staff.');
+        return message.reply('❌ No tienes permisos para consultar las estadísticas del equipo de staff.').catch(() => {});
       }
 
       const stats = cargarEstadisticas();
@@ -314,7 +333,7 @@ client.on('messageCreate', async (message) => {
       const sortedStaff = entries.sort((a, b) => b.tickets - a.tickets).slice(0, 10);
 
       if (sortedStaff.length === 0) {
-        return message.reply('📌 Todavía no hay tickets registrados.');
+        return message.reply('📌 Todavía no hay tickets registrados.').catch(() => {});
       }
 
       let description = '';
@@ -333,21 +352,21 @@ client.on('messageCreate', async (message) => {
         .setFooter({ text: 'ScrapBox • Panel Administrativo', iconURL: message.guild.iconURL() || BOT_AVATAR_URL })
         .setTimestamp();
 
-      await message.channel.send({ embeds: [embedTop] });
+      await message.channel.send({ embeds: [embedTop] }).catch(() => {});
       return;
     }
 
-    if (command === `${config.prefix}bienvenida`) {
+    if (command === 'bienvenida') {
       if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) return;
       const embed = crearEmbedBienvenida(message.author);
-      await message.channel.send({ content: `${message.author}`, embeds: [embed] });
+      await message.channel.send({ content: `${message.author}`, embeds: [embed] }).catch(() => {});
       return;
     }
 
-    if (command === `${config.prefix}boost`) {
+    if (command === 'boost') {
       if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) return;
       const embed = crearEmbedBoost(message.member);
-      await message.channel.send({ content: `${message.author}`, embeds: [embed] });
+      await message.channel.send({ content: `${message.author}`, embeds: [embed] }).catch(() => {});
       return;
     }
 
@@ -359,13 +378,13 @@ client.on('messageCreate', async (message) => {
 // --- INTERACCIONES ---
 client.on('interactionCreate', async (interaction) => {
   try {
-    // Slash Command Embed
+    // 1. SLASH COMMAND EMBED
     if (interaction.isChatInputCommand() && interaction.commandName === 'embed') {
       if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-        return interaction.reply({ content: '❌ Solo los administradores pueden usar este comando.', ephemeral: true });
+        return interaction.reply({ content: '❌ Solo los administradores pueden usar este comando.', ephemeral: true }).catch(() => {});
       }
 
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ ephemeral: true }).catch(() => {});
 
       const titulo = interaction.options.getString('titulo');
       const descripcionRaw = interaction.options.getString('descripcion');
@@ -374,7 +393,7 @@ client.on('interactionCreate', async (interaction) => {
       const imagenAttachment = interaction.options.getAttachment('imagen');
 
       if (!titulo && !descripcionRaw && !imagenAttachment) {
-        return interaction.editReply({ content: '❌ Debes incluir al menos un **título**, una **descripción** o adjuntar una **imagen**.' });
+        return interaction.editReply({ content: '❌ Debes incluir al menos un **título**, una **descripción** o adjuntar una **imagen**.' }).catch(() => {});
       }
 
       const embed = new EmbedBuilder().setColor(colorInput);
@@ -385,18 +404,18 @@ client.on('interactionCreate', async (interaction) => {
       const payload = { embeds: [embed] };
       if (mensajeTexto) payload.content = mensajeTexto.replace(/\\n/g, '\n');
 
-      await interaction.channel.send(payload);
-      return interaction.editReply({ content: `✅ Embed enviado con éxito en este canal.` });
+      await interaction.channel.send(payload).catch(() => {});
+      return interaction.editReply({ content: `✅ Embed enviado con éxito en este canal.` }).catch(() => {});
     }
 
-    // Formulario de Apertura de Ticket
+    // 2. DESPLEGABLE APERTURA TICKET
     if (interaction.isStringSelectMenu() && interaction.customId === 'select_ticket_type') {
       const selectedCategory = interaction.values[0];
-      const usernameClean = interaction.user.username.toLowerCase();
+      const usernameClean = interaction.user.username.toLowerCase().replace(/[^a-z0-9]/g, '');
       const existingChannel = interaction.guild.channels.cache.find(c => c.name.endsWith(`-${usernameClean}`));
 
       if (existingChannel) {
-        return interaction.reply({ content: `❌ Ya tienes un ticket abierto en ${existingChannel}`, ephemeral: true });
+        return interaction.reply({ content: `❌ Ya tienes un ticket abierto en ${existingChannel}`, ephemeral: true }).catch(() => {});
       }
 
       const modal = new ModalBuilder()
@@ -422,20 +441,23 @@ client.on('interactionCreate', async (interaction) => {
         new ActionRowBuilder().addComponents(reasonInput)
       );
 
-      await interaction.showModal(modal);
+      await interaction.showModal(modal).catch(() => {});
+      return;
     }
 
-    // Creación de Canal de Ticket
+    // 3. ENVÍO DE FORMULARIO MODAL
     if (interaction.isModalSubmit() && interaction.customId.startsWith('ticket_modal_')) {
+      await interaction.deferReply({ ephemeral: true }).catch(() => {});
+
       const category = interaction.customId.replace('ticket_modal_', '');
       const nickname = interaction.fields.getTextInputValue('ticket_nickname');
       const reason = interaction.fields.getTextInputValue('ticket_reason');
-      const usernameClean = interaction.user.username.toLowerCase();
+      const usernameClean = interaction.user.username.toLowerCase().replace(/[^a-z0-9]/g, '');
       const categoryClean = category.toLowerCase();
 
       const categoryEmoji = CANAL_EMOJIS[categoryClean] || '📌';
       const channelName = `${categoryEmoji}│${categoryClean}-${usernameClean}`;
-      const parentCategoryId = config.categoryIds ? config.categoryIds[category] : null;
+      const parentCategoryId = (config.categoryIds && config.categoryIds[category]) ? config.categoryIds[category] : null;
 
       const ticketChannel = await interaction.guild.channels.create({
         name: channelName,
@@ -445,7 +467,14 @@ client.on('interactionCreate', async (interaction) => {
           { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
           { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.AttachFiles] }
         ]
+      }).catch(err => {
+        console.error('Error al crear canal:', err);
+        return null;
       });
+
+      if (!ticketChannel) {
+        return interaction.editReply({ content: '❌ Hubo un fallo al crear el canal del ticket. Revisa mis permisos.' }).catch(() => {});
+      }
 
       const welcomeEmbed = new EmbedBuilder()
         .setTitle(`👋 Bienvenido al Ticket | ${category}`)
@@ -466,36 +495,37 @@ client.on('interactionCreate', async (interaction) => {
         content: `${interaction.user} <@&1539563506268119081>`,
         embeds: [welcomeEmbed],
         components: [row]
-      });
+      }).catch(() => {});
 
-      await interaction.reply({ content: `✅ Ticket creado en ${ticketChannel}`, ephemeral: true });
+      await interaction.editReply({ content: `✅ Ticket creado en ${ticketChannel}` }).catch(() => {});
+      return;
     }
 
-    // Reclamar Ticket
+    // 4. BOTÓN RECLAMAR TICKET
     if (interaction.isButton() && interaction.customId === 'claim_ticket') {
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
-        return interaction.reply({ content: '❌ Solo el staff puede reclamar este ticket.', ephemeral: true });
+        return interaction.reply({ content: '❌ Solo el staff puede reclamar este ticket.', ephemeral: true }).catch(() => {});
       }
 
       const claimEmbed = new EmbedBuilder()
         .setDescription(`📌 Este ticket ha sido reclamado por ${interaction.user}.`)
         .setColor(COLOR_SCRAPBOX);
 
-      // Guardamos la ID del staff que reclamó el ticket en el CustomId del botón deshabilitado
       const updatedRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`claimed_by_${interaction.user.id}`).setLabel(`Reclamado por ${interaction.user.username}`).setEmoji('✅').setStyle(ButtonStyle.Secondary).setDisabled(true),
         new ButtonBuilder().setCustomId('request_close_ticket').setLabel('Cerrar Ticket').setEmoji('🔒').setStyle(ButtonStyle.Danger)
       );
 
-      await interaction.update({ components: [updatedRow] });
-      await interaction.channel.send({ embeds: [claimEmbed] });
+      await interaction.update({ components: [updatedRow] }).catch(() => {});
+      await interaction.channel.send({ embeds: [claimEmbed] }).catch(() => {});
+      return;
     }
 
-    // SOLICITUD DE CIERRE (CONFIRMACIÓN)
+    // 5. SOLICITUD CIERRE
     if (interaction.isButton() && interaction.customId === 'request_close_ticket') {
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages) && 
           !interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-        return interaction.reply({ content: '❌ Solo un miembro del staff puede cerrar este ticket.', ephemeral: true });
+        return interaction.reply({ content: '❌ Solo un miembro del staff puede cerrar este ticket.', ephemeral: true }).catch(() => {});
       }
 
       const confirmEmbed = new EmbedBuilder()
@@ -507,31 +537,38 @@ client.on('interactionCreate', async (interaction) => {
         new ButtonBuilder().setCustomId('confirm_close_ticket').setLabel('Confirmar Cierre').setEmoji('✅').setStyle(ButtonStyle.Danger)
       );
 
-      await interaction.reply({ embeds: [confirmEmbed], components: [confirmRow] });
+      await interaction.reply({ embeds: [confirmEmbed], components: [confirmRow] }).catch(() => {});
+      return;
     }
 
-    // CIERRE DEFINITIVO DE TICKET
+    // 6. CONFIRMAR CIERRE Y GENERAR TRANSCRIPT
     if (interaction.isButton() && interaction.customId === 'confirm_close_ticket') {
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages) && 
           !interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-        return interaction.reply({ content: '❌ Solo un miembro del staff puede ejecutar esta acción.', ephemeral: true });
+        return interaction.reply({ content: '❌ Solo un miembro del staff puede ejecutar esta acción.', ephemeral: true }).catch(() => {});
       }
 
       const channel = interaction.channel;
 
-      // Buscar si el ticket fue reclamado previamente leyendo los componentes del primer mensaje
-      let claimedStaffId = interaction.user.id; // Por defecto asigna los puntos a quien lo cierra
-      const firstMsg = (await channel.messages.fetch({ limit: 10 })).find(m => m.components.length > 0);
-      if (firstMsg) {
-        const claimBtn = firstMsg.components[0]?.components.find(c => c.customId?.startsWith('claimed_by_'));
-        if (claimBtn) {
-          claimedStaffId = claimBtn.customId.replace('claimed_by_', '');
+      let claimedStaffId = interaction.user.id;
+      try {
+        const fetchedMsgs = await channel.messages.fetch({ limit: 10 }).catch(() => null);
+        if (fetchedMsgs) {
+          const firstMsg = fetchedMsgs.find(m => m.components && m.components.length > 0);
+          if (firstMsg) {
+            const claimBtn = firstMsg.components[0]?.components?.find(c => c.customId?.startsWith('claimed_by_'));
+            if (claimBtn) {
+              claimedStaffId = claimBtn.customId.replace('claimed_by_', '');
+            }
+          }
         }
+      } catch (e) {
+        console.error('Error buscando staff reclamante:', e);
       }
 
       sumarTicketCerrado(claimedStaffId);
 
-      await interaction.update({ content: '🔒 Generando transcript y cerrando el ticket...', embeds: [], components: [] });
+      await interaction.update({ content: '🔒 Generando transcript y cerrando el ticket...', embeds: [], components: [] }).catch(() => {});
 
       const ticketOwnerOverwrite = channel.permissionOverwrites.cache.find(
         p => p.type === 1 && p.id !== client.user.id && p.allow.has(PermissionFlagsBits.ViewChannel)
@@ -549,7 +586,9 @@ client.on('interactionCreate', async (interaction) => {
         const options = { limit: 100 };
         if (lastId) options.before = lastId;
 
-        const messages = await channel.messages.fetch(options);
+        const messages = await channel.messages.fetch(options).catch(() => null);
+        if (!messages || messages.size === 0) break;
+
         allMessages.push(...messages.values());
         if (messages.size < 100) break;
         lastId = messages.last().id;
@@ -570,7 +609,7 @@ client.on('interactionCreate', async (interaction) => {
         
         transcriptText += `[${time}] ${author}:\n${content}\n`;
 
-        if (msg.attachments.size > 0) {
+        if (msg.attachments && msg.attachments.size > 0) {
           msg.attachments.forEach(att => {
             transcriptText += `📎 Adjunto: ${att.url}\n`;
           });
@@ -591,7 +630,6 @@ client.on('interactionCreate', async (interaction) => {
           .setColor(COLOR_SCRAPBOX)
           .setTimestamp();
 
-        // Enlazamos la calificación al Staff que RECLAMÓ el ticket
         const ratingMenu = new StringSelectMenuBuilder()
           .setCustomId(`rate_staff_${claimedStaffId}`)
           .setPlaceholder('Califica la atención recibida...')
@@ -617,9 +655,10 @@ client.on('interactionCreate', async (interaction) => {
       setTimeout(() => {
         channel.delete().catch(() => {});
       }, 3000);
+      return;
     }
 
-    // Registrar Calificación desde DM
+    // 7. REGISTRAR CALIFICACIÓN DESDE DM
     if (interaction.isStringSelectMenu() && interaction.customId.startsWith('rate_staff_')) {
       const staffId = interaction.customId.replace('rate_staff_', '');
       const ratingVal = parseInt(interaction.values[0]);
@@ -633,11 +672,12 @@ client.on('interactionCreate', async (interaction) => {
       await interaction.update({ 
         embeds: [thanksEmbed], 
         components: [] 
-      });
+      }).catch(() => {});
+      return;
     }
 
   } catch (error) {
-    console.error('Error en interacción:', error);
+    console.error('❌ Error en manejador de interacción:', error);
     if (!interaction.replied && !interaction.deferred) {
       await interaction.reply({ content: '❌ Hubo un error al procesar esta acción.', ephemeral: true }).catch(() => {});
     }
