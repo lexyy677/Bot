@@ -13,9 +13,7 @@ const {
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
   AttachmentBuilder,
-  SlashCommandBuilder,
-  REST,
-  Routes
+  SlashCommandBuilder
 } = require('discord.js');
 const express = require('express');
 const http = require('http');
@@ -53,7 +51,6 @@ function sumarTicketCerrado(userId) {
   if (!stats[userId]) {
     stats[userId] = { tickets: 0, ratings: [] };
   }
-  // Compatibilidad con formato antiguo
   if (typeof stats[userId] === 'number') {
     stats[userId] = { tickets: stats[userId], ratings: [] };
   }
@@ -73,10 +70,9 @@ function agregarCalificacion(staffId, rating) {
   guardarEstadisticas(stats);
 }
 
-// --- URL DE LA FOTO / AVATAR DEL BOT (SCRAPBOX) ---
+// --- CONFIGURACIÓN DE APARIENCIA Y EMOJIS ---
 const BOT_AVATAR_URL = "https://cdn.discordapp.com/attachments/1539546821066752080/1540545314682052629/Proyecto_nuevo_17.png?ex=6a8a5820&is=6a8906a0&hm=20c03de87c306c0387da2e6b1e6aa076ad0d0a5f003b9d0e517df2c0a4d2ee77&";
 
-// --- EMOJIS COMPLETOS PARA TEXTO/EMBEDS ---
 const EMOJI_TICKET_HEADER = '<:emoji_11:1539597339746893975>';
 const EMOJI_SOPORTE_TEXT = '<:soporte:1539584375384047636>';
 const EMOJI_DUDAS_TEXT = '<:dudas:1539584438063865856>';
@@ -85,7 +81,6 @@ const EMOJI_TIENDA_TEXT = '<:tienda:1539584484033429536>';
 const EMOJI_MEDIA_TEXT = '<:media:1539584515729788950>';
 const EMOJI_POSTULACIONES_TEXT = '<:postulaciones:1539584543386763266>';
 
-// --- IDS PARA LOS MENÚS DESPLEGABLES ---
 const EMOJI_SOPORTE_ID = '1539584375384047636';
 const EMOJI_DUDAS_ID = '1539584438063865856';
 const EMOJI_REPORTE_ID = '1539584466685796375';
@@ -93,13 +88,11 @@ const EMOJI_TIENDA_ID = '1539584484033429536';
 const EMOJI_MEDIA_ID = '1539584515729788950';
 const EMOJI_POSTULACIONES_ID = '1539584543386763266';
 
-// --- EMOJIS DE BIENVENIDA Y BOOST ---
 const EMOJI_SALUDO = '<:saludo:1539592517677351083>';
 const EMOJI_PELIGRO = '<:peligro:1539592609658572850>';
 const EMOJI_FIESTA = '<:fiesta:1539590495662112798>';
 const EMOJI_BOOST = '<:boost:1539594819796471918>';
 
-// --- EMOJIS UNICODE PARA LOS CANALES ---
 const CANAL_EMOJIS = {
   'soporte': '🔧',
   'dudas': '❓',
@@ -109,8 +102,7 @@ const CANAL_EMOJIS = {
   'postulaciones': '📝'
 };
 
-// --- COLOR PRINCIPAL SCRAPBOX ---
-const COLOR_SCRAPBOX = '#00FF00'; // Verde
+const COLOR_SCRAPBOX = '#00FF00';
 
 // --- 1. PREVENCIÓN ANTI-CRASH GLOBAL ---
 process.on('unhandledRejection', (reason, promise) => {
@@ -144,7 +136,6 @@ const client = new Client({
   ]
 });
 
-// DEFINICIÓN DEL SLASH COMMAND /EMBED CON IMAGEN ADJUNTA Y SIN SELECCIÓN DE CANAL
 const embedSlashCommand = new SlashCommandBuilder()
   .setName('embed')
   .setDescription('Crea y envía un embed personalizado (Solo Administradores)')
@@ -185,29 +176,23 @@ client.once('ready', async () => {
   console.log(`✅ ${client.user.tag} conectado y listo.`);
   client.user.setActivity('ScrapBox | 24/7 Online', { type: 0 });
 
-  // CAMBIO DE NOMBRE DEL BOT A "ScrapBox Bot"
   try {
     await client.user.setUsername('ScrapBox Bot');
-    console.log('🏷️ Nombre del bot cambiado a "ScrapBox Bot".');
-  } catch (usernameError) {
-    console.error('⚠️ No se pudo cambiar el nombre del bot:', usernameError.message);
+  } catch (err) {
+    console.error('⚠️ No se pudo cambiar el nombre del bot:', err.message);
   }
 
-  // RESTAURACIÓN AUTOMÁTICA DEL AVATAR CON LA FOTO DE SCRAPBOX
   try {
     await client.user.setAvatar(BOT_AVATAR_URL);
-    console.log('🖼️ Avatar de ScrapBox actualizado con éxito.');
-  } catch (avatarError) {
-    console.error('⚠️ No se pudo cambiar el avatar:', avatarError.message);
+  } catch (err) {
+    console.error('⚠️ No se pudo cambiar el avatar:', err.message);
   }
 
-  // REGISTRO INSTANTÁNEO DE SLASH COMMANDS
   try {
-    console.log('🔄 Registrando Slash Commands...');
     client.guilds.cache.forEach(async (guild) => {
       await guild.commands.set([embedSlashCommand]);
     });
-    console.log('✅ Slash Command /embed actualizado al instante.');
+    console.log('✅ Slash Command /embed actualizado.');
   } catch (error) {
     console.error('❌ Error registrando Slash Commands:', error);
   }
@@ -221,7 +206,7 @@ client.on('guildCreate', async (guild) => {
   }
 });
 
-// --- HELPER: EMBED DE BIENVENIDA ---
+// --- HELPERS ---
 function crearEmbedBienvenida(member) {
   const description = 
     `# - ${EMOJI_SALUDO} \`|\` Bienvenido a ScrapBox (${member})\n` +
@@ -239,7 +224,6 @@ function crearEmbedBienvenida(member) {
     .setTimestamp();
 }
 
-// --- HELPER: EMBED DE BOOST ---
 function crearEmbedBoost(member) {
   const description = 
     `# ${EMOJI_BOOST} ¡Nuevo boost en el servidor!\n\n` +
@@ -252,12 +236,11 @@ function crearEmbedBoost(member) {
     .setTimestamp();
 }
 
-// --- 4. BIENVENIDAS ---
+// --- EVENTOS DE USUARIO ---
 client.on('guildMemberAdd', async (member) => {
   try {
     const channel = member.guild.channels.cache.get(config.welcomeChannelId);
     if (!channel) return;
-
     const embed = crearEmbedBienvenida(member);
     await channel.send({ content: `${member}`, embeds: [embed] });
   } catch (error) {
@@ -265,13 +248,11 @@ client.on('guildMemberAdd', async (member) => {
   }
 });
 
-// --- 5. BOOSTS ---
 client.on('guildMemberUpdate', async (oldMember, newMember) => {
   try {
     if (!oldMember.premiumSince && newMember.premiumSince) {
       const channel = newMember.guild.channels.cache.get(config.boostChannelId);
       if (!channel) return;
-
       const embed = crearEmbedBoost(newMember);
       await channel.send({ content: `${newMember}`, embeds: [embed] });
     }
@@ -280,7 +261,7 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
   }
 });
 
-// --- 6. COMANDOS POR PREFIJO ---
+// --- COMANDOS DE MENSAJE ---
 client.on('messageCreate', async (message) => {
   try {
     if (message.author.bot || !message.guild) return;
@@ -288,7 +269,6 @@ client.on('messageCreate', async (message) => {
     const args = message.content.trim().split(/ +/);
     const command = args.shift().toLowerCase();
 
-    // A) COMANDO SETUP TICKETS
     if (command === `${config.prefix}setup-tickets`) {
       if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
         return message.reply('❌ Solo administradores pueden usar este comando.');
@@ -317,36 +297,12 @@ client.on('messageCreate', async (message) => {
         .setCustomId('select_ticket_type')
         .setPlaceholder('Elige la categoría de tu consulta...')
         .addOptions(
-          new StringSelectMenuOptionBuilder()
-            .setLabel('Soporte')
-            .setDescription('Problemas técnicos o errores.')
-            .setValue('Soporte')
-            .setEmoji(EMOJI_SOPORTE_ID),
-          new StringSelectMenuOptionBuilder()
-            .setLabel('Dudas')
-            .setDescription('Preguntas generales sobre el servidor.')
-            .setValue('Dudas')
-            .setEmoji(EMOJI_DUDAS_ID),
-          new StringSelectMenuOptionBuilder()
-            .setLabel('Reporte')
-            .setDescription('Reportar jugadores o usuarios.')
-            .setValue('Reporte')
-            .setEmoji(EMOJI_REPORTE_ID),
-          new StringSelectMenuOptionBuilder()
-            .setLabel('Tienda')
-            .setDescription('Consultas sobre rangos, pagos o compras.')
-            .setValue('Tienda')
-            .setEmoji(EMOJI_TIENDA_ID),
-          new StringSelectMenuOptionBuilder()
-            .setLabel('Media')
-            .setDescription('Solicitudes de rango Media/Creador de contenido.')
-            .setValue('Media')
-            .setEmoji(EMOJI_MEDIA_ID),
-          new StringSelectMenuOptionBuilder()
-            .setLabel('Postulaciones')
-            .setDescription('Postulaciones para el equipo de Staff.')
-            .setValue('Postulaciones')
-            .setEmoji(EMOJI_POSTULACIONES_ID)
+          new StringSelectMenuOptionBuilder().setLabel('Soporte').setDescription('Problemas técnicos o errores.').setValue('Soporte').setEmoji(EMOJI_SOPORTE_ID),
+          new StringSelectMenuOptionBuilder().setLabel('Dudas').setDescription('Preguntas generales sobre el servidor.').setValue('Dudas').setEmoji(EMOJI_DUDAS_ID),
+          new StringSelectMenuOptionBuilder().setLabel('Reporte').setDescription('Reportar jugadores o usuarios.').setValue('Reporte').setEmoji(EMOJI_REPORTE_ID),
+          new StringSelectMenuOptionBuilder().setLabel('Tienda').setDescription('Consultas sobre rangos, pagos o compras.').setValue('Tienda').setEmoji(EMOJI_TIENDA_ID),
+          new StringSelectMenuOptionBuilder().setLabel('Media').setDescription('Solicitudes de rango Media/Creador de contenido.').setValue('Media').setEmoji(EMOJI_MEDIA_ID),
+          new StringSelectMenuOptionBuilder().setLabel('Postulaciones').setDescription('Postulaciones para el equipo de Staff.').setValue('Postulaciones').setEmoji(EMOJI_POSTULACIONES_ID)
         );
 
       const row = new ActionRowBuilder().addComponents(selectMenu);
@@ -354,7 +310,6 @@ client.on('messageCreate', async (message) => {
       return;
     }
 
-    // B) COMANDO TOP STAFF (SOLO PARA ADMINISTRACIÓN)
     if (command === `${config.prefix}topstaff` || command === `${config.prefix}top-staff`) {
       if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
         return message.reply('❌ No tienes permisos para consultar las estadísticas del equipo de staff.');
@@ -370,9 +325,7 @@ client.on('messageCreate', async (message) => {
         return { id, tickets: ticketCount, avg };
       });
 
-      const sortedStaff = entries
-        .sort((a, b) => b.tickets - a.tickets)
-        .slice(0, 10);
+      const sortedStaff = entries.sort((a, b) => b.tickets - a.tickets).slice(0, 10);
 
       if (sortedStaff.length === 0) {
         return message.reply('📌 Todavía no hay tickets registrados.');
@@ -398,23 +351,15 @@ client.on('messageCreate', async (message) => {
       return;
     }
 
-    // C) COMANDO PRUEBA DE BIENVENIDA
     if (command === `${config.prefix}bienvenida`) {
-      if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
-        return message.reply('❌ Solo administradores pueden probar este mensaje.');
-      }
-
+      if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) return;
       const embed = crearEmbedBienvenida(message.author);
       await message.channel.send({ content: `${message.author}`, embeds: [embed] });
       return;
     }
 
-    // D) COMANDO PRUEBA DE BOOST
     if (command === `${config.prefix}boost`) {
-      if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
-        return message.reply('❌ Solo administradores pueden probar este mensaje.');
-      }
-
+      if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) return;
       const embed = crearEmbedBoost(message.member);
       await message.channel.send({ content: `${message.author}`, embeds: [embed] });
       return;
@@ -425,10 +370,10 @@ client.on('messageCreate', async (message) => {
   }
 });
 
-// --- 7. MANEJO DE INTERACCIONES Y SLASH COMMANDS ---
+// --- INTERACCIONES ---
 client.on('interactionCreate', async (interaction) => {
   try {
-    // A) MANEJO DEL SLASH COMMAND /EMBED
+    // Slash Command Embed
     if (interaction.isChatInputCommand() && interaction.commandName === 'embed') {
       if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
         return interaction.reply({ content: '❌ Solo los administradores pueden usar este comando.', ephemeral: true });
@@ -443,41 +388,29 @@ client.on('interactionCreate', async (interaction) => {
       const imagenAttachment = interaction.options.getAttachment('imagen');
 
       if (!titulo && !descripcionRaw && !imagenAttachment) {
-        return interaction.editReply({
-          content: '❌ Debes incluir al menos un **título**, una **descripción** o adjuntar una **imagen**.'
-        });
+        return interaction.editReply({ content: '❌ Debes incluir al menos un **título**, una **descripción** o adjuntar una **imagen**.' });
       }
 
       const embed = new EmbedBuilder().setColor(colorInput);
-
       if (titulo) embed.setTitle(titulo);
       if (descripcionRaw) embed.setDescription(descripcionRaw.replace(/\\n/g, '\n'));
       if (imagenAttachment) embed.setImage(imagenAttachment.url);
 
       const payload = { embeds: [embed] };
-      if (mensajeTexto) {
-        payload.content = mensajeTexto.replace(/\\n/g, '\n');
-      }
+      if (mensajeTexto) payload.content = mensajeTexto.replace(/\\n/g, '\n');
 
       await interaction.channel.send(payload);
-
-      return interaction.editReply({
-        content: `✅ Embed enviado con éxito en este canal.`
-      });
+      return interaction.editReply({ content: `✅ Embed enviado con éxito en este canal.` });
     }
 
-    // B) SELECCIÓN DEL MENÚ -> FORMULARIO MODAL (TICKETS)
+    // Formulario de Apertura de Ticket
     if (interaction.isStringSelectMenu() && interaction.customId === 'select_ticket_type') {
       const selectedCategory = interaction.values[0];
       const usernameClean = interaction.user.username.toLowerCase();
-
       const existingChannel = interaction.guild.channels.cache.find(c => c.name.endsWith(`-${usernameClean}`));
 
       if (existingChannel) {
-        return interaction.reply({
-          content: `❌ Ya tienes un ticket abierto en ${existingChannel}`,
-          ephemeral: true
-        });
+        return interaction.reply({ content: `❌ Ya tienes un ticket abierto en ${existingChannel}`, ephemeral: true });
       }
 
       const modal = new ModalBuilder()
@@ -506,7 +439,7 @@ client.on('interactionCreate', async (interaction) => {
       await interaction.showModal(modal);
     }
 
-    // C) RESPUESTA AL FORMULARIO -> CREACIÓN DE CANAL EN SU CATEGORÍA CORRESPONDIENTE
+    // Creación de Canal de Ticket
     if (interaction.isModalSubmit() && interaction.customId.startsWith('ticket_modal_')) {
       const category = interaction.customId.replace('ticket_modal_', '');
       const nickname = interaction.fields.getTextInputValue('ticket_nickname');
@@ -516,7 +449,6 @@ client.on('interactionCreate', async (interaction) => {
 
       const categoryEmoji = CANAL_EMOJIS[categoryClean] || '📌';
       const channelName = `${categoryEmoji}│${categoryClean}-${usernameClean}`;
-
       const parentCategoryId = config.categoryIds ? config.categoryIds[category] : null;
 
       const ticketChannel = await interaction.guild.channels.create({
@@ -524,14 +456,8 @@ client.on('interactionCreate', async (interaction) => {
         type: ChannelType.GuildText,
         parent: parentCategoryId || null,
         permissionOverwrites: [
-          {
-            id: interaction.guild.id,
-            deny: [PermissionFlagsBits.ViewChannel]
-          },
-          {
-            id: interaction.user.id,
-            allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.AttachFiles]
-          }
+          { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+          { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.AttachFiles] }
         ]
       });
 
@@ -545,17 +471,8 @@ client.on('interactionCreate', async (interaction) => {
         .setColor(COLOR_SCRAPBOX)
         .setTimestamp();
 
-      const claimButton = new ButtonBuilder()
-        .setCustomId('claim_ticket')
-        .setLabel('Reclamar Ticket')
-        .setEmoji('📌')
-        .setStyle(ButtonStyle.Success);
-
-      const closeButton = new ButtonBuilder()
-        .setCustomId('close_ticket')
-        .setLabel('Cerrar Ticket')
-        .setEmoji('🔒')
-        .setStyle(ButtonStyle.Danger);
+      const claimButton = new ButtonBuilder().setCustomId('claim_ticket').setLabel('Reclamar Ticket').setEmoji('📌').setStyle(ButtonStyle.Success);
+      const closeButton = new ButtonBuilder().setCustomId('request_close_ticket').setLabel('Cerrar Ticket').setEmoji('🔒').setStyle(ButtonStyle.Danger);
 
       const row = new ActionRowBuilder().addComponents(claimButton, closeButton);
 
@@ -568,7 +485,7 @@ client.on('interactionCreate', async (interaction) => {
       await interaction.reply({ content: `✅ Ticket creado en ${ticketChannel}`, ephemeral: true });
     }
 
-    // D) BOTÓN RECLAMAR TICKET
+    // Reclamar Ticket
     if (interaction.isButton() && interaction.customId === 'claim_ticket') {
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
         return interaction.reply({ content: '❌ Solo el staff puede reclamar este ticket.', ephemeral: true });
@@ -579,36 +496,43 @@ client.on('interactionCreate', async (interaction) => {
         .setColor(COLOR_SCRAPBOX);
 
       const updatedRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`claimed_by_${interaction.user.id}`)
-          .setLabel(`Reclamado por ${interaction.user.username}`)
-          .setEmoji('✅')
-          .setStyle(ButtonStyle.Secondary)
-          .setDisabled(true),
-        new ButtonBuilder()
-          .setCustomId('close_ticket')
-          .setLabel('Cerrar Ticket')
-          .setEmoji('🔒')
-          .setStyle(ButtonStyle.Danger)
+        new ButtonBuilder().setCustomId(`claimed_by_${interaction.user.id}`).setLabel(`Reclamado por ${interaction.user.username}`).setEmoji('✅').setStyle(ButtonStyle.Secondary).setDisabled(true),
+        new ButtonBuilder().setCustomId('request_close_ticket').setLabel('Cerrar Ticket').setEmoji('🔒').setStyle(ButtonStyle.Danger)
       );
 
       await interaction.update({ components: [updatedRow] });
       await interaction.channel.send({ embeds: [claimEmbed] });
     }
 
-    // E) BOTÓN CERRAR TICKET (SOLO STAFF)
-    if (interaction.isButton() && interaction.customId === 'close_ticket') {
+    // SOLICITUD DE CIERRE (CONFIRMACIÓN)
+    if (interaction.isButton() && interaction.customId === 'request_close_ticket') {
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages) && 
           !interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-        return interaction.reply({ 
-          content: '❌ Solo un miembro del staff puede cerrar este ticket.', 
-          ephemeral: true 
-        });
+        return interaction.reply({ content: '❌ Solo un miembro del staff puede cerrar este ticket.', ephemeral: true });
+      }
+
+      const confirmEmbed = new EmbedBuilder()
+        .setTitle('⚠️ ¿Deseas cerrar este ticket?')
+        .setDescription('Al confirmar, se guardará el registro de la conversación, se le enviará la transcripción al usuario y el canal será eliminado.')
+        .setColor('#FF9900');
+
+      const confirmRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('confirm_close_ticket').setLabel('Confirmar Cierre').setEmoji('✅').setStyle(ButtonStyle.Danger)
+      );
+
+      await interaction.reply({ embeds: [confirmEmbed], components: [confirmRow] });
+    }
+
+    // CIERRE DEFINITIVO DE TICKET
+    if (interaction.isButton() && interaction.customId === 'confirm_close_ticket') {
+      if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages) && 
+          !interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        return interaction.reply({ content: '❌ Solo un miembro del staff puede ejecutar esta acción.', ephemeral: true });
       }
 
       sumarTicketCerrado(interaction.user.id);
 
-      await interaction.reply('🔒 Generando transcript y cerrando el ticket...');
+      await interaction.update({ content: '🔒 Generando transcript y cerrando el ticket...', embeds: [], components: [] });
 
       const channel = interaction.channel;
 
@@ -670,14 +594,13 @@ client.on('interactionCreate', async (interaction) => {
           .setColor(COLOR_SCRAPBOX)
           .setTimestamp();
 
-        // MENÚ DE CALIFICACIÓN DEL 1 AL 5
         const ratingMenu = new StringSelectMenuBuilder()
           .setCustomId(`rate_staff_${interaction.user.id}`)
           .setPlaceholder('Califica la atención recibida...')
           .addOptions([
             { label: '5 Estrellas - Excelente', value: '5', emoji: '⭐' },
             { label: '4 Estrellas - Buena', value: '4', emoji: '⭐' },
-            { label: '5 Estrellas - Regular', value: '3', emoji: '⭐' },
+            { label: '3 Estrellas - Regular', value: '3', emoji: '⭐' },
             { label: '2 Estrellas - Mala', value: '2', emoji: '⭐' },
             { label: '1 Estrella - Muy Mala', value: '1', emoji: '⭐' }
           ]);
@@ -698,7 +621,7 @@ client.on('interactionCreate', async (interaction) => {
       }, 3000);
     }
 
-    // F) PROCESAR LA CALIFICACIÓN ENVIADA DESDE EL DM
+    // Registrar Calificación desde DM
     if (interaction.isStringSelectMenu() && interaction.customId.startsWith('rate_staff_')) {
       const staffId = interaction.customId.replace('rate_staff_', '');
       const ratingVal = parseInt(interaction.values[0]);
