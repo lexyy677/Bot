@@ -13,7 +13,9 @@ const {
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
   AttachmentBuilder,
-  SlashCommandBuilder
+  SlashCommandBuilder,
+  REST,
+  Routes
 } = require('discord.js');
 const express = require('express');
 const http = require('http');
@@ -71,7 +73,8 @@ function agregarCalificacion(staffId, rating) {
 }
 
 // --- CONFIGURACIÓN DE APARIENCIA Y EMOJIS ---
-const BOT_AVATAR_URL = "https://cdn.discordapp.com/attachments/1539546821066752080/1540545314682052629/Proyecto_nuevo_17.png?ex=6a8a5820&is=6a8906a0&hm=20c03de87c306c0387da2e6b1e6aa076ad0d0a5f003b9d0e517df2c0a4d2ee77&";
+// Reemplazado por un avatar predeterminado de Discord seguro por si la URL caduca.
+const BOT_AVATAR_URL = "https://cdn.discordapp.com/embed/avatars/0.png";
 
 const EMOJI_TICKET_HEADER = '<:emoji_11:1539597339746893975>';
 const EMOJI_SOPORTE_TEXT = '<:soporte:1539584375384047636>';
@@ -176,33 +179,16 @@ client.once('ready', async () => {
   console.log(`✅ ${client.user.tag} conectado y listo.`);
   client.user.setActivity('ScrapBox | 24/7 Online', { type: 0 });
 
+  // Registro global eficiente usando REST API
   try {
-    await client.user.setUsername('ScrapBox Bot');
-  } catch (err) {
-    console.error('⚠️ No se pudo cambiar el nombre del bot:', err.message);
-  }
-
-  try {
-    await client.user.setAvatar(BOT_AVATAR_URL);
-  } catch (err) {
-    console.error('⚠️ No se pudo cambiar el avatar:', err.message);
-  }
-
-  try {
-    client.guilds.cache.forEach(async (guild) => {
-      await guild.commands.set([embedSlashCommand]);
-    });
-    console.log('✅ Slash Command /embed actualizado.');
+    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+    await rest.put(
+      Routes.applicationCommands(client.user.id),
+      { body: [embedSlashCommand.toJSON()] }
+    );
+    console.log('✅ Slash Command /embed registrado globalmente.');
   } catch (error) {
     console.error('❌ Error registrando Slash Commands:', error);
-  }
-});
-
-client.on('guildCreate', async (guild) => {
-  try {
-    await guild.commands.set([embedSlashCommand]);
-  } catch (err) {
-    console.error('Error al registrar comandos en nuevo servidor:', err);
   }
 });
 
@@ -220,7 +206,7 @@ function crearEmbedBienvenida(member) {
   return new EmbedBuilder()
     .setDescription(description)
     .setColor(COLOR_SCRAPBOX)
-    .setImage(BOT_AVATAR_URL)
+    .setImage(member.guild.iconURL({ extension: 'png' }) || BOT_AVATAR_URL)
     .setTimestamp();
 }
 
@@ -291,7 +277,7 @@ client.on('messageCreate', async (message) => {
       const embed = new EmbedBuilder()
         .setDescription(ticketDescription)
         .setColor(COLOR_SCRAPBOX)
-        .setImage(BOT_AVATAR_URL);
+        .setImage(message.guild.iconURL({ extension: 'png' }) || BOT_AVATAR_URL);
 
       const selectMenu = new StringSelectMenuBuilder()
         .setCustomId('select_ticket_type')
@@ -344,7 +330,7 @@ client.on('messageCreate', async (message) => {
         .setTitle('🏆 Top Staff - Rendimiento y Atenciones')
         .setDescription(description)
         .setColor(COLOR_SCRAPBOX)
-        .setFooter({ text: 'ScrapBox • Panel Administrativo', iconURL: BOT_AVATAR_URL })
+        .setFooter({ text: 'ScrapBox • Panel Administrativo', iconURL: message.guild.iconURL() || BOT_AVATAR_URL })
         .setTimestamp();
 
       await message.channel.send({ embeds: [embedTop] });
@@ -495,6 +481,7 @@ client.on('interactionCreate', async (interaction) => {
         .setDescription(`📌 Este ticket ha sido reclamado por ${interaction.user}.`)
         .setColor(COLOR_SCRAPBOX);
 
+      // Guardamos la ID del staff que reclamó el ticket en el CustomId del botón deshabilitado
       const updatedRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`claimed_by_${interaction.user.id}`).setLabel(`Reclamado por ${interaction.user.username}`).setEmoji('✅').setStyle(ButtonStyle.Secondary).setDisabled(true),
         new ButtonBuilder().setCustomId('request_close_ticket').setLabel('Cerrar Ticket').setEmoji('🔒').setStyle(ButtonStyle.Danger)
@@ -530,11 +517,21 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.reply({ content: '❌ Solo un miembro del staff puede ejecutar esta acción.', ephemeral: true });
       }
 
-      sumarTicketCerrado(interaction.user.id);
+      const channel = interaction.channel;
+
+      // Buscar si el ticket fue reclamado previamente leyendo los componentes del primer mensaje
+      let claimedStaffId = interaction.user.id; // Por defecto asigna los puntos a quien lo cierra
+      const firstMsg = (await channel.messages.fetch({ limit: 10 })).find(m => m.components.length > 0);
+      if (firstMsg) {
+        const claimBtn = firstMsg.components[0]?.components.find(c => c.customId?.startsWith('claimed_by_'));
+        if (claimBtn) {
+          claimedStaffId = claimBtn.customId.replace('claimed_by_', '');
+        }
+      }
+
+      sumarTicketCerrado(claimedStaffId);
 
       await interaction.update({ content: '🔒 Generando transcript y cerrando el ticket...', embeds: [], components: [] });
-
-      const channel = interaction.channel;
 
       const ticketOwnerOverwrite = channel.permissionOverwrites.cache.find(
         p => p.type === 1 && p.id !== client.user.id && p.allow.has(PermissionFlagsBits.ViewChannel)
@@ -594,8 +591,9 @@ client.on('interactionCreate', async (interaction) => {
           .setColor(COLOR_SCRAPBOX)
           .setTimestamp();
 
+        // Enlazamos la calificación al Staff que RECLAMÓ el ticket
         const ratingMenu = new StringSelectMenuBuilder()
-          .setCustomId(`rate_staff_${interaction.user.id}`)
+          .setCustomId(`rate_staff_${claimedStaffId}`)
           .setPlaceholder('Califica la atención recibida...')
           .addOptions([
             { label: '5 Estrellas - Excelente', value: '5', emoji: '⭐' },
